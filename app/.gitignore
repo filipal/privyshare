@@ -1,6 +1,12 @@
 /build
-
-# macOS Finder datoteke
+# macOS
 .DS_Store
 */.DS_Store
 **/.DS_Store
+
+# Android/Gradle/IDE
+.idea/
+.gradle/
+**/build/
+local.properties
+*.iml

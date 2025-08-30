@@ -19,6 +19,7 @@ import hr.filipal.privyshare.io.EncFileManager
 import kotlinx.coroutines.launch
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import android.util.Log
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -51,58 +52,68 @@ fun EncryptScreen() {
             Button(
                 onClick = {
                     scope.launch {
-                        // 0) pripremi izlazni .enc fajl
-                        val outFile = EncFileManager.newEncFile(context, "payload")
+                        try {
+                            // 0) pripremi izlazni .enc fajl
+                            val outFile = EncFileManager.newEncFile(context, "payload")
 
-                        // 1) payload = samo tekst poruke (MVP)
-                        val payloadBytes = message.text.toByteArray(Charsets.UTF_8)
-                        val payloadIn = ByteArrayInputStream(payloadBytes)
+                            // 1) payload = samo tekst poruke (MVP)
+                            val payloadBytes = message.text.toByteArray(Charsets.UTF_8)
+                            val payloadIn = ByteArrayInputStream(payloadBytes)
 
-                        // 2) šifriraj tijelo
-                        val engine = SodiumCryptoEngine()
-                        val cek = engine.generateCEK()
-                        val bodyBaos = ByteArrayOutputStream()
+                            // 2) šifriraj tijelo
+                            val engine = SodiumCryptoEngine()
+                            val cek = engine.generateCEK()
+                            val bodyBaos = ByteArrayOutputStream()
 
-                        val bodyHashHex = engine.encryptStream(
-                            input = payloadIn,
-                            output = bodyBaos,
-                            cek = cek
-                        )
-                        val cipherBody = bodyBaos.toByteArray()
+                            val bodyHashHex = engine.encryptStream(
+                                input = payloadIn,
+                                output = bodyBaos,
+                                cek = cek
+                            )
+                            val cipherBody = bodyBaos.toByteArray()
 
-                        // 3) header meta + (zasad prazni) recipients i signature
-                        val meta = EncMeta(
-                            mime = "text/plain",
-                            createdAt = EnvelopeCodec.nowIsoUtc(),
-                            app = "PrivyShare/1.0",
-                            hasText = message.text.isNotEmpty(),
-                            attachments = attachments.map { uri ->
-                                EncAttachment(
-                                    name = uri.lastPathSegment ?: "file",
-                                    mime = context.contentResolver.getType(uri) ?: "*/*"
-                                )
+                            // 3) header meta + (zasad prazni) recipients i signature
+                            val meta = EncMeta(
+                                mime = "text/plain",
+                                createdAt = EnvelopeCodec.nowIsoUtc(),
+                                app = "PrivyShare/1.0",
+                                hasText = message.text.isNotEmpty(),
+                                attachments = attachments.map { uri ->
+                                    EncAttachment(
+                                        name = uri.lastPathSegment ?: "file",
+                                        mime = context.contentResolver.getType(uri) ?: "*/*"
+                                    )
+                                }
+                            )
+                            val recipients: List<EncRecipient> = emptyList()
+                            val fakeSig = ""
+
+                            val header = EnvelopeCodec.buildHeader(
+                                meta = meta,
+                                recipients = recipients,
+                                bodyHashHex = bodyHashHex,
+                                signatureB64 = fakeSig
+                            )
+                            val headerJson = EnvelopeCodec.toJsonBytes(header)
+
+                            // 4) upiši [header]\n[nonce||cipher] u .enc
+                            outFile.outputStream().use { os ->
+                                os.write(headerJson)
+                                os.write('\n'.code)
+                                os.write(cipherBody)
                             }
-                        )
-                        val recipients: List<EncRecipient> = emptyList()
-                        val fakeSig = ""
 
-                        val header = EnvelopeCodec.buildHeader(
-                            meta = meta,
-                            recipients = recipients,
-                            bodyHashHex = bodyHashHex,
-                            signatureB64 = fakeSig
-                        )
-                        val headerJson = EnvelopeCodec.toJsonBytes(header)
-
-                        // 4) upiši [header]\n[nonce||cipher] u .enc
-                        outFile.outputStream().use { os ->
-                            os.write(headerJson)
-                            os.write('\n'.code)
-                            os.write(cipherBody)
+                            // 5) Share Sheet
+                            EncFileManager.shareEnc(context, outFile, "Send encrypted file")
+                        } catch (e: IllegalArgumentException) {
+                            Log.e("EncryptScreen", "Encryption failed", e)
+                            snackbar.showSnackbar("Encryption failed")
+                            return@launch
+                        } catch (e: UnsatisfiedLinkError) {
+                            Log.e("EncryptScreen", "Encryption failed", e)
+                            snackbar.showSnackbar("Encryption failed")
+                            return@launch
                         }
-
-                        // 5) Share Sheet
-                        EncFileManager.shareEnc(context, outFile, "Send encrypted file")
                     }
                 },
                 modifier = Modifier
