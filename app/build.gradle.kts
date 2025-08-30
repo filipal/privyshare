@@ -68,6 +68,7 @@ dependencies {
     // implementation("com.goterl:lazysodium-android:5.1.0")
     // implementation("com.goterl:lazysodium-java:5.1.0")
     testImplementation(libs.junit)
+    testImplementation(kotlin("test"))
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
