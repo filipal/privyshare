@@ -17,8 +17,11 @@ import androidx.compose.foundation.layout.Arrangement
 import hr.filipal.privyshare.crypto.*
 import hr.filipal.privyshare.io.EncFileManager
 import kotlinx.coroutines.launch
-import java.io.ByteArrayInputStream
+import kotlinx.coroutines.Dispatchers
 import java.io.ByteArrayOutputStream
+import java.io.DataOutputStream
+import java.io.PipedInputStream
+import java.io.PipedOutputStream
 import android.util.Log
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -56,9 +59,34 @@ fun EncryptScreen() {
                             // 0) pripremi izlazni .enc fajl
                             val outFile = EncFileManager.newEncFile(context, "payload")
 
-                            // 1) payload = samo tekst poruke (MVP)
-                            val payloadBytes = message.text.toByteArray(Charsets.UTF_8)
-                            val payloadIn = ByteArrayInputStream(payloadBytes)
+                            // 1) payload stream: [text?][attachments*]
+                            val pipeIn = PipedInputStream()
+                            val pipeOut = PipedOutputStream(pipeIn)
+
+                            val attInfos = attachments.map { uri ->
+                                val name = uri.lastPathSegment ?: "file"
+                                val mime = context.contentResolver.getType(uri) ?: "*/*"
+                                val bytes = context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: 0L
+                                uri to EncAttachment(name, mime, bytes)
+                            }
+
+                            val writer = launch(Dispatchers.IO) {
+                                DataOutputStream(pipeOut).use { dos ->
+                                    if (message.text.isNotEmpty()) {
+                                        val textBytes = message.text.toByteArray(Charsets.UTF_8)
+                                        dos.writeInt(textBytes.size)
+                                        dos.write(textBytes)
+                                    } else {
+                                        dos.writeInt(0)
+                                    }
+                                    attInfos.forEach { (uri, metaAtt) ->
+                                        dos.writeUTF(metaAtt.name)
+                                        dos.writeUTF(metaAtt.mime)
+                                        dos.writeLong(metaAtt.bytes)
+                                        context.contentResolver.openInputStream(uri)?.use { it.copyTo(dos) }
+                                    }
+                                }
+                            }
 
                             // 2) šifriraj tijelo
                             val engine = SodiumCryptoEngine()
@@ -66,11 +94,13 @@ fun EncryptScreen() {
                             val bodyBaos = ByteArrayOutputStream()
 
                             val bodyHashHex = engine.encryptStream(
-                                input = payloadIn,
+                                input = pipeIn,
                                 output = bodyBaos,
                                 cek = cek
                             )
                             val cipherBody = bodyBaos.toByteArray()
+
+                            writer.join()
 
                             // 3) header meta + (zasad prazni) recipients i signature
                             val metaMime = if (attachments.isEmpty()) "text/plain" else "multipart/mixed"
@@ -79,12 +109,7 @@ fun EncryptScreen() {
                                 createdAt = EnvelopeCodec.nowIsoUtc(),
                                 app = "PrivyShare/1.0",
                                 hasText = message.text.isNotEmpty(),
-                                attachments = attachments.map { uri ->
-                                    EncAttachment(
-                                        name = uri.lastPathSegment ?: "file",
-                                        mime = context.contentResolver.getType(uri) ?: "*/*"
-                                    )
-                                }
+                                attachments = attInfos.map { it.second }
                             )
                             val recipients: List<EncRecipient> = emptyList()
                             val fakeSig = ""

@@ -24,7 +24,8 @@ data class EncAlgorithms(
 @Serializable
 data class EncAttachment(
     val name: String,
-    val mime: String
+    val mime: String,
+    val bytes: Long
 )
 
 @Serializable
@@ -89,6 +90,7 @@ object EnvelopeCodec {
                         add(buildJsonObject {
                             put("name", JsonPrimitive(att.name))
                             put("mime", JsonPrimitive(att.mime))
+                            put("bytes", JsonPrimitive(att.bytes))
                         })
                     }
                 })
