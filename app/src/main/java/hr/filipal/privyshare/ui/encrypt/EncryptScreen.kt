@@ -73,8 +73,9 @@ fun EncryptScreen() {
                             val cipherBody = bodyBaos.toByteArray()
 
                             // 3) header meta + (zasad prazni) recipients i signature
+                            val metaMime = if (attachments.isEmpty()) "text/plain" else "multipart/mixed"
                             val meta = EncMeta(
-                                mime = "text/plain",
+                                mime = metaMime,
                                 createdAt = EnvelopeCodec.nowIsoUtc(),
                                 app = "PrivyShare/1.0",
                                 hasText = message.text.isNotEmpty(),
