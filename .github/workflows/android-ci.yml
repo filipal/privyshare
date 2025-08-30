@@ -10,6 +10,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -17,8 +18,20 @@ jobs:
           java-version: 17
           cache: gradle
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
 
-      - name: Build with Gradle
-        run: ./gradlew clean build --stacktrace
+      # Kreiraj local.properties tako da Gradle zna gdje je SDK
+      - name: Prepare local.properties
+        run: echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x ./gradlew
+
+      # Pokreni unit testove (brzo, bez emulatora)
+      - name: Run unit tests
+        run: ./gradlew clean test --stacktrace
+
+      # (Po želji) napravi build nakon testova
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug --stacktrace
